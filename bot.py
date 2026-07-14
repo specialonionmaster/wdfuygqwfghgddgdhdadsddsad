@@ -8,11 +8,14 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 
 # Загружаем переменные из .env
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+RENDER_URL = os.getenv("RENDER_URL", "")  # URL твоего сервиса на Render
 
 if not BOT_TOKEN or not ADMIN_ID:
     raise ValueError("Проверь .env файл! Нужны BOT_TOKEN и ADMIN_ID")
@@ -66,21 +69,18 @@ def is_admin(user_id: int) -> bool:
 def get_main_keyboard(user_id: int):
     buttons = []
 
-    # Кнопка получить темку
     buttons.append([InlineKeyboardButton(
         text="🔥 Получить темку бесплатно",
         callback_data="start_main",
         style="success"
     )])
 
-    # Кнопка канала (красная)
     buttons.append([InlineKeyboardButton(
         text="📢 Канал воркеров",
         url="https://t.me/ly_team",
         style="danger"
     )])
 
-    # Админ панель только для админа
     if is_admin(user_id):
         buttons.append([InlineKeyboardButton(
             text="⚙️ Админ панель",
@@ -339,7 +339,6 @@ async def add_topic_callback(message: types.Message, state: FSMContext):
         "text": data["text"]
     }
 
-    # Сохраняем в JSON файл
     save_topics(topics)
 
     await state.clear()
@@ -406,7 +405,6 @@ async def confirm_delete_topic(callback: types.CallbackQuery):
         topic_title = topics[topic_id]["title"]
         del topics[topic_id]
 
-        # Сохраняем изменения в JSON файл
         save_topics(topics)
 
         try:
@@ -425,11 +423,23 @@ async def main():
     print("🤖 Бот запущен!")
     print(f"👑 Админ ID: {ADMIN_ID}")
     print(f"📚 Загружено тем: {len(topics)}")
-    await dp.start_polling(bot)
+
+    # Используем Webhook для Render
+    if RENDER_URL:
+        await bot.set_webhook(f"{RENDER_URL}/webhook")
+        app = web.Application()
+        webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+        webhook_requests_handler.register(app, path="/webhook")
+        setup_application(app, dp, bot=bot)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+        await site.start()
+        print("Webhook установлен!")
+    else:
+        # Long polling для локальной разработки
+        await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    keep_alive()
-    import time
-    time.sleep(2)
     asyncio.run(main())
