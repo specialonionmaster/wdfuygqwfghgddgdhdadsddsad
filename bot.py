@@ -429,4 +429,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    keep_alive()
+    import time
+    time.sleep(2)
     asyncio.run(main())
